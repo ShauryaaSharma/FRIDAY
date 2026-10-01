@@ -1,0 +1,66 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  # Runs on BOTH platforms on purpose. Two bugs shipped to main in 2026-08 that
+  # an ubuntu-only CI could not see, because both were about how Windows differs:
+  # `python3` there resolves to a Microsoft Store stub that exits 9009 without
+  # running anything (so every coding-arena case scored as failed), and the
+  # console defaults to a legacy codepage that cannot encode the arrows in the
+  # help text (so `friday --help` crashed on first run after install). The
+  # maintainer develops on Windows, so a green ubuntu badge was actively
+  # misleading — `make gate` was closed locally while main looked fine.
+  skills-and-evals:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false        # a windows-only break must not hide an ubuntu one
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash           # one set of commands for both runners
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e '.[dev]'
+      - name: Lint (ruff)
+        run: python -m ruff check friday evals scripts
+      - name: Validate skills
+        run: python scripts/validate_skills.py
+      # .env.example's Connections block is GENERATED from friday/integrations.py.
+      # Without this step the generator is advisory: add an integration, forget
+      # `--write`, and the file every new user reads goes quietly stale — which
+      # is the exact failure generating it was meant to make impossible.
+      - name: .env.example matches the integrations registry
+        run: python scripts/generate_env_example.py --check
+      - name: Deterministic evals (offline tier — no API key in CI)
+        run: python -m pytest -q evals/deterministic
+      # The wheel is what a `pip install` user actually gets, and both Windows
+      # bugs above only surfaced from an installed package run outside the repo
+      # checkout. Build it, install it somewhere else, and run the first command
+      # a new user types.
+      - name: Wheel installs and the CLI runs
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet build
+          python -m build --wheel --outdir dist
+          python -m venv "$RUNNER_TEMP/smoke"
+          # posix puts scripts in bin/, windows in Scripts/
+          BIN="$RUNNER_TEMP/smoke/bin"; [ -d "$BIN" ] || BIN="$RUNNER_TEMP/smoke/Scripts"
+          "$BIN/python" -m pip install --quiet dist/*.whl
+          cd "$RUNNER_TEMP"     # outside the checkout, or we test the repo not the wheel
+          # `--help` is an unrecognised command and exits 1 on purpose, so the
+          # exit code says nothing. Judge it by what it printed instead.
+          out=$("$BIN/friday" --help 2>&1 || true)
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q "friday dashboard"
+          if printf '%s\n' "$out" | grep -q "Traceback"; then
+            echo "the CLI crashed instead of printing help"; exit 1
+          fi
