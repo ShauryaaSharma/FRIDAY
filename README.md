@@ -2,7 +2,7 @@
 
 **A local-first personal assistant that runs on your laptop.**
 
-[![Friday architecture](https://raw.githubusercontent.com/ShauryaaSharma/FRIDAY/main/docs/architecture.png)](https://github.com/ShauryaaSharma/FRIDAY/architecture.png)
+[![Friday architecture](https://github.com/ShauryaaSharma/FRIDAY/blob/v2/architecture.png)](https://github.com/ShauryaaSharma/FRIDAY/blob/v2/architecture.png)
 
 - **Local-first.** Memory is one SQLite file at `.friday/state.db`. Open it, read it,
   it is yours. Nothing leaves the machine unless you connect something that does.
